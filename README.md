@@ -5,3 +5,6 @@
 - `cd cobalt/api/src`
 - `pnpm install`
 - `pnpm start`
+## to update:
+- enter the `cobalt` folder
+- run `git pull https://github.com/imputnet/cobalt`
