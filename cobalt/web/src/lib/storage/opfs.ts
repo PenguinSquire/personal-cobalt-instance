@@ -1,4 +1,5 @@
 import { AbstractStorage } from "./storage";
+import { uuid } from "$lib/util";
 
 const COBALT_PROCESSING_DIR = "cobalt-processing-data";
 
@@ -6,6 +7,8 @@ export class OPFSStorage extends AbstractStorage {
     #root;
     #handle;
     #io;
+
+    static #isAvailable?: boolean;
 
     constructor(root: FileSystemDirectoryHandle, handle: FileSystemFileHandle, reader: FileSystemSyncAccessHandle) {
         super();
@@ -17,7 +20,7 @@ export class OPFSStorage extends AbstractStorage {
     static async init() {
         const root = await navigator.storage.getDirectory();
         const cobaltDir = await root.getDirectoryHandle(COBALT_PROCESSING_DIR, { create: true });
-        const handle = await cobaltDir.getFileHandle(crypto.randomUUID(), { create: true });
+        const handle = await cobaltDir.getFileHandle(uuid(), { create: true });
         const reader = await handle.createSyncAccessHandle();
 
         return new this(cobaltDir, handle, reader);
@@ -38,16 +41,46 @@ export class OPFSStorage extends AbstractStorage {
         await this.#root.removeEntry(this.#handle.name);
     }
 
-    static isAvailable() {
+    static async #computeIsAvailable() {
+        let tempFile = uuid(), ok = true;
+
         if (typeof navigator === 'undefined')
             return false;
 
-        return 'storage' in navigator && 'getDirectory' in navigator.storage;
+        if ('storage' in navigator && 'getDirectory' in navigator.storage) {
+            try {
+                const root = await navigator.storage.getDirectory();
+                const handle = await root.getFileHandle(tempFile, { create: true });
+                const syncAccess = await handle.createSyncAccessHandle();
+                syncAccess.close();
+            } catch {
+                ok = false;
+            }
+
+            try {
+                const root = await navigator.storage.getDirectory();
+                await root.removeEntry(tempFile, { recursive: true });
+            } catch {
+                ok = false;
+            }
+
+            return ok;
+        }
+
+        return false;
+    }
+
+    static async isAvailable() {
+        if (this.#isAvailable === undefined) {
+            this.#isAvailable = await this.#computeIsAvailable();
+        }
+
+        return this.#isAvailable;
     }
 }
 
 export const removeFromFileStorage = async (filename: string) => {
-    if (OPFSStorage.isAvailable()) {
+    if (await OPFSStorage.isAvailable()) {
         const root = await navigator.storage.getDirectory();
 
         try {
@@ -60,7 +93,7 @@ export const removeFromFileStorage = async (filename: string) => {
 }
 
 export const clearFileStorage = async () => {
-    if (OPFSStorage.isAvailable()) {
+    if (await OPFSStorage.isAvailable()) {
         const root = await navigator.storage.getDirectory();
         try {
             await root.removeEntry(COBALT_PROCESSING_DIR, { recursive: true });
